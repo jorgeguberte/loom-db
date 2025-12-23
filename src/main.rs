@@ -10,6 +10,7 @@ fn main() {
     if Path::new(memory_file).exists() {
         println!("📂 Carregando cérebro existente...");
         brain = LoomGraph::load_from_file(memory_file).unwrap();
+        brain.wake_up();
     } else {
         println!("✨ Criando novo cérebro (Tick 0)...");
         brain = LoomGraph::new(0.90); // Decay agressivo de 0.90

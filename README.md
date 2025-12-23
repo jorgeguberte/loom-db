@@ -77,9 +77,10 @@ fn main() {
 
 
 ## Mechanics Explained
-1. The Activation FormulaLoomDB uses a time-based decay formula inspired by biological synapses:$$A_{t} = A_{t-1} \times (DecayRate)^{\Delta t}$$Where $\Delta t$ is the number of "ticks" since the last access. This is calculated lazily.
+1. The Activation Formula: LoomDB uses a time-based decay formula inspired by biological synapses: $$A_{t} = A_{t-1} \times (DecayRate)^{\Delta t}$$ Where $\Delta t$ is the number of "ticks" since the last access. This is calculated lazily.
 
-2. Spread Activation (The "Ripple")When a node is boosted with propagate = true, energy flows to neighbors based on edge weight:$$Impact_{neighbor} = Boost_{source} \times Weight_{edge} \times DampingFactor$$This allows the system to surface relevant context ("Safety") without explicit queries.
+2. Spread Activation (The "Ripple"): When a node is boosted with propagate = true, energy flows to neighbors based on edge weight: $$Impact_{neighbor} = Boost_{source} \times Weight_{edge} \times DampingFactor$$ 
+This allows the system to surface relevant context without explicit queries.
 
 ----
 
@@ -90,11 +91,11 @@ fn main() {
 
 - [x] Spread Activation
 
+- [x] Context Builder: Output formatter for LLM System Prompts.
+
 - [ ] WASM Bindings: Expose LoomGraph to JavaScript/TypeScript.
 
 - [ ] Dream Protocol: Pruning process to remove weak memories during "sleep".
-
-- [ ] Context Builder: Output formatter for LLM System Prompts.
 
 ## License
 MIT

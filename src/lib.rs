@@ -99,6 +99,7 @@ pub struct LoomGraph {
     // O Córtex Associativo: Mapeia "palavra" -> "lista de índices no vetor nodes"
     pub index: HashMap<String, Vec<usize>>, 
     pub node_map: HashMap<Uuid, usize>,
+    pub last_saved: Option<DateTime<Utc>>,
 }
 
 impl LoomGraph {
@@ -110,6 +111,7 @@ impl LoomGraph {
             decay_rate,
             index: HashMap::new(),
             node_map: HashMap::new(), // Inicializa o mapa
+            last_saved: None,
         }
     }
 
@@ -229,8 +231,9 @@ impl LoomGraph {
     // ========================================================================
 
     /// Salva o cérebro inteiro num arquivo JSON
-    pub fn save_to_file(&self, filepath: &str) -> std::io::Result<()> {
-        let file = std::fs::File::create(filepath)?;
+    pub fn save_to_file(&mut self, filepath: &str) -> std::io::Result<()> {
+        self.last_saved = Some(Utc::now());
+        let file = File::create(filepath)?;
         let writer = std::io::BufWriter::new(file);
         serde_json::to_writer_pretty(writer, &self)?;
         Ok(())
@@ -242,6 +245,33 @@ impl LoomGraph {
         let reader = std::io::BufReader::new(file);
         let brain = serde_json::from_reader(reader)?;
         Ok(brain)
+    }
+
+    /// Sincroniza o relógio interno com o tempo real decorrido.
+    pub fn wake_up(&mut self) {
+        if let Some(last_time) = self.last_saved {
+            let now = Utc::now();
+            // Vamos usar MINUTOS como a unidade de base para Ticks neste teste.
+            // Para produção, poderia ser horas ou dias.
+            let minutes_passed = (now - last_time).num_minutes();
+            
+            if minutes_passed > 0 {
+                println!("💤 Zzz... O sistema dormiu por {} minutos (mundo real).", minutes_passed);
+                println!("⏩ Avançando {} ticks no tempo interno...", minutes_passed);
+                
+                // O SALTO NO TEMPO:
+                // Simplesmente somamos ao contador. O decay será calculado 
+                // matematicamente (Lazy) na próxima vez que acessarmos um nó.
+                self.current_tick += minutes_passed as u64;
+            } else {
+                println!("⚡ Acordei instantaneamente (menos de 1 minuto decorrido).");
+            }
+        } else {
+            println!("✨ Primeira vez acordando (sem registo de sono anterior).");
+        }
+        
+        // Atualiza o last_saved para o "agora" para continuar a contar
+        self.last_saved = Some(Utc::now());
     }
 
     // ========================================================================
