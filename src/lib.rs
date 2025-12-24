@@ -1,9 +1,10 @@
-use std::fs::File;
-use std::io::BufReader;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap; // Importante para o índice
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
 use uuid::Uuid;
+use wasm_bindgen::prelude::*;
 
 // ============================================================================
 // 1. THE GRID (Schemas & Structs)
@@ -68,12 +69,11 @@ impl Node {
         }
     }
 
-    // Helper para extrair texto indexável do nó
     pub fn extract_text(&self) -> String {
         match self {
             Node::Episode(_, d) => d.summary.clone(),
             Node::Concept(_, d) => format!("{} {}", d.name, d.definition),
-            Node::State(_, _) => "".to_string(), // Emoções puras não têm texto indexável por enquanto
+            Node::State(_, _) => "".to_string(), // Estados são sentimentos "mudos" (não indexáveis por texto)
         }
     }
 }
@@ -90,19 +90,32 @@ pub enum Edge {
 // ============================================================================
 // 2. THE ENGINE (The Loom)
 // ============================================================================
+
+#[wasm_bindgen]
 #[derive(Serialize, Deserialize)]
 pub struct LoomGraph {
+    #[wasm_bindgen(skip)]
     pub nodes: Vec<Node>,
+    #[wasm_bindgen(skip)]
     pub edges: Vec<Edge>,
+    #[wasm_bindgen(skip)]
     pub current_tick: u64,
+    #[wasm_bindgen(skip)]
     pub decay_rate: f32,
-    // O Córtex Associativo: Mapeia "palavra" -> "lista de índices no vetor nodes"
-    pub index: HashMap<String, Vec<usize>>, 
+    #[wasm_bindgen(skip)]
+    pub index: HashMap<String, Vec<usize>>,
+    #[wasm_bindgen(skip)]
     pub node_map: HashMap<Uuid, usize>,
+    #[wasm_bindgen(skip)]
     pub last_saved: Option<DateTime<Utc>>,
 }
 
+// ----------------------------------------------------------------------------
+// API PÚBLICA (WASM/JS Friendly)
+// ----------------------------------------------------------------------------
+#[wasm_bindgen]
 impl LoomGraph {
+    #[wasm_bindgen(constructor)]
     pub fn new(decay_rate: f32) -> Self {
         Self {
             nodes: Vec::new(),
@@ -110,37 +123,209 @@ impl LoomGraph {
             current_tick: 0,
             decay_rate,
             index: HashMap::new(),
-            node_map: HashMap::new(), // Inicializa o mapa
+            node_map: HashMap::new(),
             last_saved: None,
         }
     }
 
+    // --- 1. CONCEITO (Conhecimento Semântico) ---
+    // JS: brain.add_concept("Rust", "Linguagem segura")
+    #[wasm_bindgen]
+    pub fn add_concept(&mut self, name: String, definition: String) -> String {
+        let node = Node::Concept(NodeMetadata::new(), ConceptData { 
+            name, 
+            definition 
+        });
+        let id = node.meta().id.to_string();
+        self.add_node(node); 
+        id
+    }
+
+    // --- 2. EPISÓDIO (Memória Episódica / Evento) ---
+    // JS: brain.add_episode("O usuário disse que gosta de pizza")
+    // Nota: O Rust preenche o timestamp automaticamente com Utc::now()
+    #[wasm_bindgen]
+    pub fn add_episode(&mut self, summary: String) -> String {
+        let node = Node::Episode(NodeMetadata::new(), EpisodeData { 
+            summary, 
+            timestamp: Utc::now() 
+        });
+        let id = node.meta().id.to_string();
+        self.add_node(node);
+        id
+    }
+
+    // --- 3. ESTADO (Emoção / Sentimento) ---
+    // JS: brain.add_state(0.8, 0.5)  -> (Valence=Positive, Arousal=Medium)
+    #[wasm_bindgen]
+    pub fn add_state(&mut self, valence: f32, arousal: f32) -> String {
+        let node = Node::State(NodeMetadata::new(), StateData { 
+            valence, 
+            arousal 
+        });
+        let id = node.meta().id.to_string();
+        self.add_node(node);
+        id
+    }
+
+    // --- BUSCA & UTILITÁRIOS ---
+
+    #[wasm_bindgen]
+    pub fn search(&mut self, query: &str) -> String {
+        let results = self.search_native(query); 
+        serde_json::to_string(&results).unwrap_or("[]".to_string())
+    }
+
+    #[wasm_bindgen]
+    pub fn get_context(&mut self, min_activation: f32) -> String {
+        self.get_context_prompt(min_activation)
+    }
+
+    #[wasm_bindgen]
     pub fn tick(&mut self) {
         self.current_tick += 1;
     }
 
+    #[wasm_bindgen]
+    pub fn wake_up(&mut self) {
+        if let Some(last_time) = self.last_saved {
+            let now = Utc::now();
+            let minutes_passed = (now - last_time).num_minutes();
+            
+            if minutes_passed > 0 {
+                self.current_tick += minutes_passed as u64;
+            }
+        }
+        self.last_saved = Some(Utc::now());
+    }
+
+    // --- PERSISTÊNCIA WEB (Import/Export Strings) ---
+
+    #[wasm_bindgen]
+    pub fn export_backup(&self) -> String {
+        serde_json::to_string(&self).unwrap_or("{}".to_string())
+    }
+
+    #[wasm_bindgen]
+    pub fn import_backup(json: &str) -> LoomGraph {
+        serde_json::from_str(json).unwrap_or_else(|_| LoomGraph::new(0.95))
+    }
+
+    #[wasm_bindgen]
+    pub fn get_node_info(&self, index: usize) -> String {
+        // Tenta pegar o nó pelo índice numérico
+        if let Some(node) = self.nodes.get(index) {
+            // O serde_json faz a mágica de converter Enum (Episode/Concept/State) para JSON
+            serde_json::to_string(node).unwrap_or("{}".to_string())
+        } else {
+            "{}".to_string() // Retorna objeto vazio se o ID não existir
+        }
+    }
+
+    // JS chama: connect("uuid_string_a", "uuid_string_b", 0.9)
+    #[wasm_bindgen]
+    pub fn connect(&mut self, source_id: &str, target_id: &str, weight: f32) -> bool {
+        // Tenta converter as Strings recebidas para UUIDs reais
+        let source_uuid = match Uuid::parse_str(source_id) {
+            Ok(id) => id,
+            Err(_) => return false, // ID inválido
+        };
+
+        let target_uuid = match Uuid::parse_str(target_id) {
+            Ok(id) => id,
+            Err(_) => return false,
+        };
+
+        // Verifica se os UUIDs existem no mapa
+        if self.node_map.contains_key(&source_uuid) && self.node_map.contains_key(&target_uuid) {
+            self.edges.push(Edge::Associated(source_uuid, target_uuid, weight));
+            return true;
+        }
+        
+        false
+    }
+    
+
+    // Vamos expor o Boost também para testarmos a reação em cadeia manualmente
+    // JS chama: stimulate("uuid_string", 1.0)
+    #[wasm_bindgen]
+    pub fn stimulate(&mut self, id_str: &str, force: f32) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id_str) {
+            if let Some(&idx) = self.node_map.get(&uuid) {
+                self.boost_node(idx, force, true);
+                return true;
+            }
+        }
+        false
+    }
+}
+
+// ----------------------------------------------------------------------------
+// API INTERNA (Rust Only) - O "Motor" Real
+// ----------------------------------------------------------------------------
+impl LoomGraph {
+    // Método universal interno (usado pelo add_concept, add_episode, etc.)
     pub fn add_node(&mut self, node: Node) {
         let idx = self.nodes.len();
-        let id = node.meta().id; // Pega o ID antes de mover
+        let id = node.meta().id;
         
-        // 1. Indexar o conteúdo textual
+        // Só indexamos texto se houver texto (Estados são ignorados aqui)
         let text = node.extract_text().to_lowercase();
-        let tokens: Vec<&str> = text.split_whitespace().collect();
-        
-        for token in tokens {
-            let clean = token.trim_matches(|c: char| !c.is_alphanumeric()).to_string();
-            if !clean.is_empty() {
-                self.index.entry(clean).or_insert(Vec::new()).push(idx);
+        if !text.is_empty() {
+            let tokens: Vec<&str> = text.split_whitespace().collect();
+            for token in tokens {
+                let clean = token.trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+                if !clean.is_empty() {
+                    self.index.entry(clean).or_insert(Vec::new()).push(idx);
+                }
             }
         }
 
-        // 2. Mapear UUID -> Index
         self.node_map.insert(id, idx);
-
-        // 3. Adicionar ao vetor
         let mut n = node;
         n.meta_mut().last_tick = self.current_tick;
         self.nodes.push(n);
+    }
+
+    pub fn search_native(&mut self, query: &str) -> Vec<(usize, f32)> {
+        let clean_query = query.to_lowercase();
+        let clean_query = clean_query.trim(); // Removido o shadowing desnecessário na mesma linha
+
+        if clean_query.is_empty() {
+            return Vec::new();
+        }
+
+        // --- FASE 1: COLETA (Immutable Borrow) ---
+        // Aqui só lemos. Não chamamos nada que altera o self.
+        let mut candidate_indices = Vec::new();
+        
+        for (key, indices) in &self.index {
+            if key.contains(clean_query) {
+                // Copiamos os IDs para a nossa lista temporária
+                candidate_indices.extend(indices);
+            }
+        }
+        // ✨ AQUI O BORROW IMUTÁVEL MORRE ✨
+        // Como o loop acabou, o Rust solta o 'self.index'.
+
+        // Limpeza: Removemos duplicatas para não processar o mesmo nó duas vezes
+        // (Ex: se buscou "t" e achou "Rust" e "Test", o mesmo ID pode aparecer 2x)
+        candidate_indices.sort_unstable();
+        candidate_indices.dedup();
+
+        // --- FASE 2: CÁLCULO (Mutable Borrow) ---
+        // Agora estamos livres para chamar métodos que alteram o self (get_activation)
+        let mut results = Vec::new();
+        
+        for idx in candidate_indices {
+            let activation = self.get_activation(idx);
+            results.push((idx, activation));
+        }
+
+        // Ordenação final
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        results
     }
 
     pub fn get_activation(&mut self, node_idx: usize) -> f32 {
@@ -154,158 +339,52 @@ impl LoomGraph {
             meta.activation *= decay.powi(delta_t);
             meta.last_tick = tick_now;
         }
-
         meta.activation
     }
 
-    //Agora aceita um parâmetro `propagate` para evitar loops infinitos
     pub fn boost_node(&mut self, node_idx: usize, amount: f32, propagate: bool) {
-        // 1. Aplica o Boost no nó alvo (Assintótico)
         let current_activation = self.get_activation(node_idx);
         let meta = self.nodes[node_idx].meta_mut();
-
-        // Boost assintótico: (1.0 - atual) * força
         let real_boost = (1.0 - current_activation) * amount;
         meta.activation += real_boost;
         meta.last_tick = self.current_tick;
         
-        // 2. SPREAD ACTIVATION (A Onda) 🌊
-        // Se `propagate` for true, espalha energia para os vizinhos
         if propagate {
             let node_id = meta.id;
-            
-            // Clonamos as arestas para não brigar com o Borrow Checker
-            // (Numa versão ultra-otimizada faríamos diferente, mas assim é seguro)
             let edges_snapshot = self.edges.clone(); 
-            
             for edge in edges_snapshot {
-                // Verifica conexões onde este nó é a Origem
                 if let Edge::Associated(source, target, weight) = edge {
                     if source == node_id {
-                        // Achamos um vizinho!
                         if let Some(&neighbor_idx) = self.node_map.get(&target) {
-                            // A energia dissipa: Boost Original * Peso da Conexão * Fator de Amortecimento (0.5)
-                            // Exemplo: Boost 0.5 * Peso 0.9 * Amortecimento 0.5 = Vizinho ganha 0.225
                             let ripple_effect = amount * weight * 0.5;
-                            
-                            // Chama boost recursivamente, mas com propagate=false para parar no 1º nível (evita loop infinito)
                             self.boost_node(neighbor_idx, ripple_effect, false);
                         }
                     }
                 }
-                // Poderíamos adicionar lógica para outros tipos de aresta aqui (Ex: Evoked -> Emoção)
             }
         }
-
     }
 
-    // A BUSCA DO AGENTE
-    // Retorna índices dos nós encontrados, ORDENADOS por Ativação (Mais relevante primeiro)
-    pub fn search(&mut self, query: &str) -> Vec<(usize, f32)> {
-        let clean_query = query.to_lowercase();
-        let clean_query = clean_query.trim();
-
-        // A MUDANÇA MÁGICA ESTÁ AQUI: .cloned()
-        // Pegamos a lista de índices e fazemos uma cópia para a nossa mão.
-        // Isso liberta o 'self.index' para podermos usar o 'self' logo abaixo.
-        if let Some(indices) = self.index.get(clean_query).cloned() {
-            let mut results = Vec::new();
-            
-            for idx in indices {
-                // Agora o compilador sabe que não estamos mais segurando o HashMap
-                // Podemos mutar o self livremente!
-                let activation = self.get_activation(idx);
-                results.push((idx, activation));
-            }
-
-            results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-            results.dedup_by_key(|k| k.0);
-            return results;
-        }
-
-        Vec::new()
-    }
-
-    // ========================================================================
-    // PERSISTÊNCIA (Save/Load)
-    // ========================================================================
-
-    /// Salva o cérebro inteiro num arquivo JSON
-    pub fn save_to_file(&mut self, filepath: &str) -> std::io::Result<()> {
-        self.last_saved = Some(Utc::now());
-        let file = File::create(filepath)?;
-        let writer = std::io::BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, &self)?;
-        Ok(())
-    }
-
-    /// Carrega um cérebro existente de um arquivo JSON
-    pub fn load_from_file(filepath: &str) -> std::io::Result<Self> {
-        let file = std::fs::File::open(filepath)?;
-        let reader = std::io::BufReader::new(file);
-        let brain = serde_json::from_reader(reader)?;
-        Ok(brain)
-    }
-
-    /// Sincroniza o relógio interno com o tempo real decorrido.
-    pub fn wake_up(&mut self) {
-        if let Some(last_time) = self.last_saved {
-            let now = Utc::now();
-            // Vamos usar MINUTOS como a unidade de base para Ticks neste teste.
-            // Para produção, poderia ser horas ou dias.
-            let minutes_passed = (now - last_time).num_minutes();
-            
-            if minutes_passed > 0 {
-                println!("💤 Zzz... O sistema dormiu por {} minutos (mundo real).", minutes_passed);
-                println!("⏩ Avançando {} ticks no tempo interno...", minutes_passed);
-                
-                // O SALTO NO TEMPO:
-                // Simplesmente somamos ao contador. O decay será calculado 
-                // matematicamente (Lazy) na próxima vez que acessarmos um nó.
-                self.current_tick += minutes_passed as u64;
-            } else {
-                println!("⚡ Acordei instantaneamente (menos de 1 minuto decorrido).");
-            }
-        } else {
-            println!("✨ Primeira vez acordando (sem registo de sono anterior).");
-        }
-        
-        // Atualiza o last_saved para o "agora" para continuar a contar
-        self.last_saved = Some(Utc::now());
-    }
-
-    // ========================================================================
-    // CONTEXT BUILDER (A Voz)
-    // ========================================================================
-
-    // Gera um prompt XML formatado para LLMs (Gemini/GPT/Claude)
     pub fn get_context_prompt(&mut self, min_activation: f32) -> String {
         let mut buffer = String::new();
-        
         buffer.push_str("<current_state>\n");
         
-        // 1. Filtrar memórias relevantes (Acima do Threshold)
-        // Precisamos coletar os índices primeiro para iterar
         let mut active_indices: Vec<usize> = (0..self.nodes.len())
             .filter(|&idx| self.get_activation(idx) > min_activation)
             .collect();
 
-        // 2. Ordenar por relevância (Mais ativos primeiro)
         active_indices.sort_by(|&a, &b| {
             let val_a = self.nodes[a].meta().activation;
             let val_b = self.nodes[b].meta().activation;
             val_b.partial_cmp(&val_a).unwrap()
         });
 
-        // 3. Gerar XML
         if active_indices.is_empty() {
             buffer.push_str("  <memory>No relevant active memories.</memory>\n");
         } else {
             for idx in active_indices {
                 let node = &self.nodes[idx];
                 let meta = node.meta();
-                
-                // Formata com base no tipo
                 match node {
                     Node::Concept(_, data) => {
                         buffer.push_str(&format!(
@@ -328,8 +407,27 @@ impl LoomGraph {
                 }
             }
         }
-        
         buffer.push_str("</current_state>");
         buffer
     }
+
+    // Persistência CLI (Desktop)
+    pub fn save_to_file(&mut self, filepath: &str) -> std::io::Result<()> {
+        self.last_saved = Some(Utc::now());
+        let file = File::create(filepath)?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer_pretty(writer, &self)?;
+        Ok(())
+    }
+
+    pub fn load_from_file(filepath: &str) -> std::io::Result<Self> {
+        let file = File::open(filepath)?;
+        let reader = BufReader::new(file);
+        let brain = serde_json::from_reader(reader)?;
+        Ok(brain)
+    }
+
+    
+
+
 }

@@ -93,7 +93,7 @@ This allows the system to surface relevant context without explicit queries.
 
 - [x] Context Builder: Output formatter for LLM System Prompts.
 
-- [ ] WASM Bindings: Expose LoomGraph to JavaScript/TypeScript.
+- [x] WASM Bindings: Expose LoomGraph to JavaScript/TypeScript.
 
 - [ ] Dream Protocol: Pruning process to remove weak memories during "sleep".
 

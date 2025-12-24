@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoomDB 🧠 Secure Mode</title>
+    <style>
+        :root {
+            --bg: #0f0f13;
+            --panel: #1a1a20;
+            --primary: #00ff9d;
+            --accent: #ff0055;
+            --text: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Segoe UI', monospace;
+            background: var(--bg);
+            color: var(--text);
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--panel);
+            padding: 20px;
+            border-radius: 8px;
+            flex: 1;
+            border: 1px solid #333;
+        }
+
+        h2,
+        h3 {
+            color: var(--primary);
+            margin-top: 0;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+
+        input,
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #000;
+            border: 1px solid #444;
+            color: white;
+        }
+
+        button {
+            background: var(--primary);
+            color: black;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        /* Estilo para a área de conexão ativa */
+        .connection-zone {
+            background: #2a2a35;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px dashed #555;
+        }
+
+        .conn-slot {
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .conn-filled {
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        .memory-card {
+            background: #000;
+            border-left: 3px solid var(--primary);
+            padding: 10px;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+            position: relative;
+        }
+
+        .meta {
+            color: #666;
+            font-size: 0.75em;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .uuid {
+            font-family: monospace;
+            font-size: 0.7em;
+            color: #444;
+            margin-top: 5px;
+            word-break: break-all;
+        }
+
+        .actions {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .btn-mini {
+            padding: 4px 8px;
+            font-size: 0.75em;
+            width: auto;
+            margin: 0;
+        }
+
+        .btn-source {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+        }
+
+        .btn-target {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+        }
+
+        .btn-stimulate {
+            background: var(--accent);
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="panel">
+        <h2>📥 Controle Neural</h2>
+
+        <h3>Novo Dado</h3>
+        <input type="text" id="conceptName" placeholder="Nome">
+        <input type="text" id="conceptDef" placeholder="Definição">
+        <button onclick="addConcept()">Criar Conceito</button>
+
+        <h3>🔗 Conectar Sinapse</h3>
+        <div class="connection-zone">
+            <div class="conn-slot">ORIGEM: <span id="lblSource" class="conn-filled">---</span></div>
+            <div class="conn-slot">DESTINO: <span id="lblTarget" class="conn-filled">---</span></div>
+            <button onclick="executeConnection()" style="margin-top:10px;">Unir Neurônios</button>
+        </div>
+
+        <p id="status" style="color: #666;">Inicializando...</p>
+    </div>
+
+    <div class="panel">
+        <h2>🧠 Memória Ativa</h2>
+        <input type="text" id="searchInput" placeholder="Buscar..." onkeyup="search()">
+        <div id="resultsArea"></div>
+    </div>
+
+    <script type="module">
+        import init, { LoomGraph } from './pkg/loom_db.js';
+
+        let brain;
+        // Variáveis para guardar os UUIDs selecionados
+        let selectedSource = null;
+        let selectedTarget = null;
+        let sourceName = "";
+        let targetName = "";
+
+        async function start() {
+            await init();
+            brain = new LoomGraph(0.95);
+
+            brain.add_concept("LoomDB", "Database seguro");
+            brain.add_concept("Rust", "Linguagem robusta");
+
+            document.getElementById('status').innerText = "🟢 Sistema Online";
+            search();
+        }
+
+        // Funções de Seleção
+        window.setSource = (id, name) => {
+            selectedSource = id;
+            sourceName = name;
+            document.getElementById('lblSource').innerText = name;
+        }
+
+        window.setTarget = (id, name) => {
+            selectedTarget = id;
+            targetName = name;
+            document.getElementById('lblTarget').innerText = name;
+        }
+
+        window.executeConnection = () => {
+            if (!selectedSource || !selectedTarget) {
+                alert("Selecione Origem e Destino nos cards à direita.");
+                return;
+            }
+            if (selectedSource === selectedTarget) {
+                alert("Não pode conectar um nó a ele mesmo (loop).");
+                return;
+            }
+
+            console.log(`🔗 Conectando UUID ${selectedSource} -> ${selectedTarget}`);
+            // AGORA USAMOS UUIDs REAIS!
+            const ok = brain.connect(selectedSource, selectedTarget, 0.9);
+
+            if (ok) {
+                alert(`Conectado: ${sourceName} ↔ ${targetName}`);
+                // Limpa seleção
+                selectedSource = null; selectedTarget = null;
+                document.getElementById('lblSource').innerText = "---";
+                document.getElementById('lblTarget').innerText = "---";
+            } else {
+                alert("Erro ao conectar (UUID inválido?)");
+            }
+        };
+
+        window.stimulate = (id) => {
+            brain.stimulate(id, 1.0);
+            search();
+        }
+
+        window.addConcept = () => {
+            const n = document.getElementById('conceptName').value;
+            const d = document.getElementById('conceptDef').value;
+            if (n && d) { brain.add_concept(n, d); search(); }
+        };
+
+        window.search = () => {
+            const query = document.getElementById('searchInput').value;
+            const area = document.getElementById('resultsArea');
+            area.innerHTML = "";
+
+            // Busca (mesmo vazia traz tudo se a função nativa permitir, ou filtramos no JS)
+            // Vou assumir que sua busca "contains" já resolve bem vazios ou letras comuns
+            const jsonStr = brain.search(query || " ");
+            const results = JSON.parse(jsonStr);
+
+            results.forEach(([index, activation]) => {
+                const nodeJson = brain.get_node_info(index);
+                const node = JSON.parse(nodeJson);
+
+                // Extrai dados
+                let type = Object.keys(node)[0];
+                let data = node[type][1];
+                let meta = node[type][0]; // Metadata está no índice 0
+                let uuid = meta.id;       // UUID REAL AQUI!
+
+                let title = type === "Concept" ? data.name : "Episódio";
+                let content = type === "Concept" ? data.definition : data.summary;
+
+                const card = document.createElement('div');
+                card.className = 'memory-card';
+                // Passamos o UUID ('${uuid}') e o Nome ('${title}') para os botões
+                card.innerHTML = `
+                    <div class="meta">
+                        <span>${type}</span>
+                        <span style="color:var(--primary)">⚡ ${activation.toFixed(2)}</span>
+                    </div>
+                    <div class="highlight">${title}</div>
+                    <div style="margin-bottom:5px;">${content}</div>
+                    <div class="uuid">${uuid}</div>
+                    
+                    <div class="actions">
+                        <button class="btn-mini btn-source" onclick="setSource('${uuid}', '${title}')">Origem</button>
+                        <button class="btn-mini btn-target" onclick="setTarget('${uuid}', '${title}')">Destino</button>
+                        <button class="btn-mini btn-stimulate" onclick="stimulate('${uuid}')">⚡</button>
+                    </div>
+                `;
+                area.appendChild(card);
+            });
+        }
+
+        start();
+    </script>
+</body>
+
+</html>
