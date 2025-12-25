@@ -4,253 +4,553 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LoomDB 🧠 Neural Interface</title>
+    <title>CORTEX // LoomDB Experience</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Libraries -->
     <script src="https://unpkg.com/force-graph"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
     <style>
         :root {
-            --bg: #0d0d12;
-            --panel: #1a1a24;
-            --primary: #00ff9d;
-            --accent: #ff0055;
-            --text: #e0e0e0;
-            --border: #333;
+            --bg-deep: #020305;
+            --bg-panel: rgba(10, 12, 18, 0.7);
+            --accent-primary: #00ff9d;
+            --accent-secondary: #7000ff;
+            --accent-danger: #ff004c;
+            --text-main: #e2e8f0;
+            --text-dim: #94a3b8;
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --glow-primary: rgba(0, 255, 157, 0.3);
+            --glow-secondary: rgba(112, 0, 255, 0.3);
         }
 
         * {
             box-sizing: border-box;
+            user-select: none;
         }
 
         body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            background: var(--bg);
-            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-deep);
+            color: var(--text-main);
             margin: 0;
-            padding: 20px;
-            display: flex;
-            gap: 20px;
+            padding: 0;
             height: 100vh;
+            width: 100vw;
             overflow: hidden;
+            display: grid;
+            grid-template-columns: 380px 1fr 380px;
+            grid-template-rows: 80px 1fr;
+            background-image:
+                radial-gradient(circle at 50% 50%, rgba(112, 0, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 0% 0%, rgba(0, 255, 157, 0.03) 0%, transparent 30%);
         }
 
-        .panel {
-            background: var(--panel);
-            padding: 20px;
-            border-radius: 12px;
-            border: 1px solid var(--border);
+        /* --- Global Scrollbar --- */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-glass);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-primary);
+        }
+
+        /* --- Header --- */
+        header {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 40px;
+            border-bottom: 1px solid var(--border-glass);
+            backdrop-filter: blur(20px);
+            z-index: 100;
+        }
+
+        .logo {
+            font-weight: 900;
+            font-size: 1.4em;
+            letter-spacing: 4px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.7em;
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border-glass);
+            color: var(--accent-primary);
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--accent-primary);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.5);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* --- Panels --- */
+        .sidebar {
+            background: var(--bg-panel);
+            backdrop-filter: blur(24px);
+            border-right: 1px solid var(--border-glass);
             display: flex;
             flex-direction: column;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-        }
-
-        .panel-side {
-            width: 350px;
-            flex-shrink: 0;
+            gap: 20px;
+            padding: 30px;
             overflow-y: auto;
+            position: relative;
         }
 
-        .panel-main {
-            flex: 1;
+        .sidebar-right {
+            border-right: none;
+            border-left: 1px solid var(--border-glass);
+        }
+
+        .main-view {
             position: relative;
             background: #000;
-            border-radius: 12px;
-            border: 1px solid var(--border);
             overflow: hidden;
         }
 
-        h2,
-        h3 {
-            color: var(--primary);
-            margin-top: 0;
-            border-bottom: 1px solid var(--border);
-            padding-bottom: 12px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
+        /* --- HUD Elements --- */
+        .hud-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            z-index: 50;
         }
 
-        input,
+        .hud-card {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid var(--border-glass);
+            padding: 15px 25px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 15px;
+        }
+
+        .hud-title {
+            font-size: 0.6em;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-bottom: 5px;
+        }
+
+        .hud-value {
+            font-size: 1.2em;
+            font-weight: 700;
+            color: var(--accent-primary);
+        }
+
+        /* --- Components --- */
+        .section-title {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--text-dim);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title i {
+            width: 14px;
+            color: var(--accent-primary);
+        }
+
+        .control-group {
+            margin-bottom: 30px;
+        }
+
+        input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glass);
+            padding: 14px 18px;
+            border-radius: 10px;
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+            margin-bottom: 12px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 0 15px var(--glow-primary);
+        }
+
         button {
             width: 100%;
             padding: 14px;
-            margin-bottom: 12px;
-            background: #08080c;
-            border: 1px solid #444;
-            color: white;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-
-        button {
-            background: var(--primary);
-            color: #000;
-            font-weight: 900;
-            cursor: pointer;
-            border: none;
-            transition: all 0.2s ease;
-        }
-
-        button:hover {
-            filter: brightness(1.2);
-            transform: scale(1.02);
-        }
-
-        .connection-zone {
-            background: #14141d;
-            padding: 15px;
             border-radius: 10px;
-            margin-bottom: 20px;
-            border: 1px dashed #555;
-        }
-
-        .conn-slot {
-            font-size: 0.85em;
-            color: #999;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .conn-filled {
-            color: var(--primary);
-            font-weight: bold;
-            text-align: right;
-        }
-
-        .memory-card {
-            background: #050508;
-            border-left: 4px solid var(--primary);
-            padding: 16px;
-            margin-bottom: 16px;
-            font-size: 0.9em;
-            border-radius: 4px 10px 10px 4px;
-            border: 1px solid #222;
-        }
-
-        .meta {
-            color: #666;
-            font-size: 0.75em;
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-weight: bold;
-            text-transform: uppercase;
-        }
-
-        .uuid {
-            font-family: 'SF Mono', 'Consolas', monospace;
-            font-size: 0.65em;
-            color: #333;
-            margin-top: 10px;
-            word-break: break-all;
-            background: #000;
-            padding: 5px;
-            border-radius: 4px;
-        }
-
-        .actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 15px;
-        }
-
-        .btn-mini {
-            padding: 8px 12px;
-            font-size: 0.75em;
-            width: auto;
-            margin: 0;
-            flex: 1;
-        }
-
-        .btn-source {
-            background: #222;
-            color: #fff;
-            border: 1px solid #444;
-        }
-
-        .btn-target {
-            background: #222;
-            color: #fff;
-            border: 1px solid #444;
-        }
-
-        .btn-stimulate {
-            background: var(--accent);
-            color: white;
             border: none;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 10px;
         }
 
-        #graph-container {
-            width: 100%;
-            height: 100%;
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), #00d482);
+            color: #000;
         }
 
-        .graph-label {
-            position: absolute;
-            top: 25px;
-            left: 25px;
-            pointer-events: none;
-            color: var(--primary);
-            font-weight: 900;
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid var(--border-glass);
+            color: var(--text-main);
+        }
+
+        .btn-ghost:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+            background: var(--glow-primary);
+        }
+
+        .btn-danger {
+            background: rgba(255, 0, 76, 0.1);
+            border: 1px solid rgba(255, 0, 76, 0.2);
+            color: var(--accent-danger);
+        }
+
+        .btn-danger:hover {
+            background: var(--accent-danger);
+            color: white;
+            box-shadow: 0 0 20px rgba(255, 0, 76, 0.4);
+        }
+
+        /* --- Memory Cards --- */
+        .memory-scroll {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .node-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-glass);
+            border-radius: 16px;
+            padding: 20px;
+            transition: all 0.4s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .node-card:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: var(--accent-primary);
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .node-type-tag {
+            font-size: 0.6em;
             text-transform: uppercase;
-            font-size: 0.8em;
-            letter-spacing: 4px;
-            background: rgba(0, 0, 0, 0.85);
-            padding: 10px 20px;
-            border-radius: 8px;
-            border: 1px solid var(--primary);
-            box-shadow: 0 0 20px rgba(0, 255, 157, 0.2);
-            z-index: 10;
+            font-weight: 900;
+            padding: 3px 8px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            display: inline-block;
         }
 
-        #status-bar {
-            color: #555;
-            font-size: 11px;
-            font-family: monospace;
+        .tag-concept {
+            background: var(--glow-primary);
+            color: var(--accent-primary);
+        }
+
+        .tag-episode {
+            background: var(--glow-secondary);
+            color: var(--accent-secondary);
+        }
+
+        .tag-state {
+            background: rgba(255, 0, 76, 0.2);
+            color: var(--accent-danger);
+        }
+
+        .node-title {
+            font-size: 1.1em;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .node-desc {
+            font-size: 0.85em;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+
+        .node-stats {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-glass);
+            display: flex;
+            justify-content: space-between;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7em;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-bar {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            width: 100%;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .stat-fill {
+            height: 100%;
+            background: var(--accent-primary);
+            transition: width 0.5s ease;
+        }
+
+        /* --- Tooltip UI --- */
+        .selection-panel {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 12, 18, 0.9);
+            border: 1px solid var(--accent-primary);
+            border-radius: 20px;
+            padding: 10px 30px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 0 40px rgba(0, 255, 157, 0.2);
+            z-index: 60;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.4s ease;
+        }
+
+        .selection-panel.active {
+            opacity: 1;
+            visibility: visible;
+            bottom: 40px;
+        }
+
+        /* --- Agent Chat --- */
+        .agent-container {
             margin-top: auto;
+            border-top: 1px solid var(--border-glass);
             padding-top: 20px;
+        }
+
+        .thought-stream {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7em;
+            color: #bd93f9;
+            margin-bottom: 15px;
+            height: auto;
+            min-height: 40px;
+            padding: 10px;
+            background: rgba(189, 147, 249, 0.05);
+            border-radius: 8px;
+            border-left: 2px solid var(--accent-secondary);
+        }
+
+        /* --- Glossary --- */
+        .glossary {
+            font-size: 0.75em;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-glass);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .glossary-item {
+            margin-bottom: 10px;
+        }
+
+        .glossary-term {
+            color: var(--accent-primary);
+            font-weight: 700;
+        }
+
+        .glossary-desc {
+            color: var(--text-dim);
+            display: block;
+            margin-top: 2px;
+        }
+
+        /* --- Utility --- */
+        .glass-blur {
+            backdrop-filter: blur(20px);
+        }
+
+        .glow-text {
+            text-shadow: 0 0 10px var(--glow-primary);
         }
     </style>
 </head>
 
 <body>
 
-    <div class="panel panel-side">
-        <h2>📥 Controle</h2>
-        <h3>Novo Dado</h3>
-        <input type="text" id="conceptName" placeholder="Nome do Conceito">
-        <input type="text" id="conceptDef" placeholder="Definição/Explicação">
-        <button onclick="addConcept()">Criar Conceito</button>
+    <header>
+        <div class="logo">
+            <i data-lucide="brain-circuit"></i>
+            LOOM.DB // Cortex
+        </div>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            KERNEL ACTIVE
+        </div>
+    </header>
 
-        <h3>🔗 Sinapse</h3>
-        <div class="connection-zone">
-            <div class="conn-slot">Origem: <span id="lblSource" class="conn-filled">---</span></div>
-            <div class="conn-slot">Destino: <span id="lblTarget" class="conn-filled">---</span></div>
-            <div class="conn-slot" style="margin-top:5px;">
-                <span>Peso: </span>
-                <input type="number" id="connWeight" value="0.9" step="0.1"
-                    style="width: 70px; padding: 5px; margin: 0; background: #000; border: 1px solid #444; color: #00ff9d;">
-            </div>
-            <button onclick="executeConnection()" style="margin-top:10px;">Unir Neurônios</button>
+    <!-- LEFT SIDEBAR: Controls -->
+    <aside class="sidebar">
+        <div class="control-group">
+            <div class="section-title"><i data-lucide="database"></i> Ingestão</div>
+            <input type="text" id="nodeName" placeholder="Identificador / Nome">
+            <input type="text" id="nodeContent" placeholder="Conteúdo / Definição">
+            <button class="btn-primary" onclick="addConcept()">
+                <i data-lucide="plus"></i> Criar Conceito
+            </button>
         </div>
 
-        <button onclick="updateUI()"
-            style="background: #222; color: var(--primary); border: 1px solid var(--primary); margin-bottom: 8px;">🔄
-            Sincronizar DB</button>
-        <button onclick="prune()" style="background: #222; color: var(--accent); border: 1px solid var(--accent);">🧹
-            Podar Ruído</button>
+        <div class="control-group">
+            <div class="section-title"><i data-lucide="zap"></i> Protocolos</div>
+            <button class="btn-ghost" onclick="runDream()">
+                <i data-lucide="moon"></i> Ciclo de Sono (Dream)
+            </button>
+            <button class="btn-danger" onclick="prune()">
+                <i data-lucide="scissors"></i> Podar Ruído (LTP Clean)
+            </button>
+        </div>
 
-        <div id="status-bar" style="margin-top: 15px;">STATUS: STANDBY</div>
-    </div>
+        <div class="agent-container">
+            <div class="section-title"><i data-lucide="message-square"></i> Agente</div>
+            <div class="thought-stream" id="thoughtStream">_ ANALYZING_TOPOLOGY...</div>
+            <input type="text" id="agentInput" placeholder="Comando Neural..." onkeyup="handleAgent(event)">
+        </div>
 
-    <div class="panel panel-main">
-        <div class="graph-label">Rede Neural Ativa</div>
+        <div class="glossary">
+            <div class="section-title" style="margin-bottom: 10px; font-size: 0.6em;"><i data-lucide="info"></i>
+                Glossário Neural</div>
+            <div class="glossary-item">
+                <span class="glossary-term">DREAM (Sono)</span>
+                <span class="glossary-desc">Ciclo REM. Consolida memórias fortes (Estabilidade ↑) e limpa ruído
+                    (Ativação ↓).</span>
+            </div>
+            <div class="glossary-item">
+                <span class="glossary-term">PODA (Prune)</span>
+                <span class="glossary-desc">Remove permanentemente memórias instáveis e esquecidas para otimizar o
+                    córtex.</span>
+            </div>
+            <div class="glossary-item">
+                <span class="glossary-term">LTP</span>
+                <span class="glossary-desc">Potenciação de Longo Prazo. A resistência de uma memória ao
+                    esquecimento.</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN VIEW: Graph -->
+    <main class="main-view">
+        <div class="hud-overlay">
+            <div class="hud-card">
+                <div class="hud-title">Tick Clock</div>
+                <div class="hud-value" id="hudTick">000000</div>
+            </div>
+            <div class="hud-card">
+                <div class="hud-title">Active Neurons</div>
+                <div class="hud-value" id="hudNodes">0</div>
+            </div>
+        </div>
+
         <div id="graph-container"></div>
-    </div>
 
-    <div class="panel panel-side">
-        <h2>🧠 Memória</h2>
-        <input type="text" id="searchInput" placeholder="Buscar no Córtex..." onkeyup="search()">
-        <div id="resultsArea" style="flex: 1; overflow-y: auto;"></div>
-    </div>
+        <div class="selection-panel" id="selectionPanel">
+            <div style="font-size: 0.8em; color: var(--text-dim)">CONECTAR:</div>
+            <div id="sourceName" style="color: var(--accent-primary); font-weight: 700;">Origem</div>
+            <i data-lucide="arrow-right"></i>
+            <div id="targetName" style="color: var(--text-main);">Alvo</div>
+            <input type="number" id="connWeight" value="1.0" step="0.5" style="width: 60px; margin: 0; padding: 5px;">
+            <button class="btn-primary" style="width: auto; padding: 5px 15px;"
+                onclick="confirmConnection()">VINCULAR</button>
+            <button class="btn-ghost" style="width: auto; padding: 5px 15px;" onclick="cancelSelection()">X</button>
+        </div>
+    </main>
+
+    <!-- RIGHT SIDEBAR: Memories -->
+    <aside class="sidebar sidebar-right">
+        <div class="section-title"><i data-lucide="search"></i> Recuperação</div>
+        <input type="text" id="searchBar" placeholder="Pesquisar no Córtex..." onkeyup="search()">
+
+        <div class="memory-scroll" id="memoryScroll">
+            <!-- Cards will be injected here -->
+        </div>
+    </aside>
 
     <script type="module">
         import init, { LoomGraph } from './pkg/loom_db.js';
@@ -259,221 +559,232 @@
         let graph;
         let selectedSource = null;
         let selectedTarget = null;
-        let sourceName = "";
-        let targetName = "";
 
         async function start() {
             try {
                 await init();
                 brain = new LoomGraph(0.95);
-                console.log("WASM Initialized");
+                lucide.createIcons();
 
-                const elem = document.getElementById('graph-container');
-                graph = ForceGraph()(elem)
-                    .backgroundColor('#000000')
-                    .nodeColor(node => {
-                        const types = { 'Concept': '#00ff9d', 'Episode': '#00d4ff', 'State': '#ff0055' };
-                        return types[node.type] || '#ffffff';
-                    })
-                    .nodeCanvasObject((node, ctx, globalScale) => {
-                        const label = node.name;
-                        const fontSize = 12 / globalScale;
-                        ctx.font = `${fontSize}px Inter, system-ui`;
-                        const textWidth = ctx.measureText(label).width;
-                        const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2); // some padding
+                initGraph();
 
-                        // Node Stability Glow (Halo)
-                        if (node.stability > 1.2) {
-                            ctx.beginPath();
-                            ctx.arc(node.x, node.y, (node.activation * 10 + 6) / globalScale, 0, 2 * Math.PI, false);
-                            ctx.fillStyle = node.color + '22'; // Very transparent glow
-                            ctx.fill();
-                        }
+                // Demo Data
+                brain.add_concept("Consciência", "Capacidade de perceber a própria existência");
+                brain.add_concept("LoomDB", "Memória estrita por grafos");
+                brain.add_concept("Rust", "Linguagem de alto desempenho");
 
-                        // Draw Node Circle
-                        const r = Math.max(4, (node.activation || 0) * 8 + 2);
+                updateUI();
+
+                // Real-time loop
+                setInterval(() => {
+                    brain.tick();
+                    document.getElementById('hudTick').innerText = brain.export_backup ? JSON.parse(brain.export_backup()).current_tick.toString().padStart(6, '0') : "000000";
+                }, 1000);
+
+            } catch (err) {
+                console.error("Boot Failure:", err);
+            }
+        }
+
+        function initGraph() {
+            const elem = document.getElementById('graph-container');
+            graph = ForceGraph()(elem)
+                .backgroundColor('#000000')
+                .nodeId('id')
+                .nodeLabel('name')
+                .nodeAutoColorBy('type')
+                .nodeCanvasObject((node, ctx, globalScale) => {
+                    const label = node.name;
+                    const fontSize = 12 / globalScale;
+                    ctx.font = `${fontSize}px Outfit`;
+                    const textWidth = ctx.measureText(label).width;
+                    const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
+
+                    const r = Math.max(3, (node.activation || 0) * 10 + 2);
+
+                    // Glow
+                    ctx.shadowBlur = 15 / globalScale;
+                    ctx.shadowColor = node.color;
+
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+                    ctx.fillStyle = node.color;
+                    ctx.fill();
+
+                    ctx.shadowBlur = 0;
+
+                    // Stability ring
+                    if (node.stability > 1.5) {
                         ctx.beginPath();
-                        ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
-                        ctx.fillStyle = node.color;
-                        ctx.fill();
+                        ctx.arc(node.x, node.y, r + 2, 0, 2 * Math.PI, false);
+                        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                        ctx.lineWidth = 1 / globalScale;
+                        ctx.stroke();
+                    }
 
-                        // Stability Border (Inner circle)
-                        if (node.stability > 2.0) {
-                            ctx.beginPath();
-                            ctx.arc(node.x, node.y, r * 0.6, 0, 2 * Math.PI, false);
-                            ctx.strokeStyle = '#fff';
-                            ctx.lineWidth = 1 / globalScale;
-                            ctx.stroke();
-                        }
-
-                        // Draw Label
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                        ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y - fontSize - r - 2, bckgDimensions[0], bckgDimensions[1]);
-
+                    // Label
+                    if (globalScale > 1.5) {
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
-                        ctx.fillStyle = node.color;
-                        ctx.fillText(label, node.x, node.y - fontSize / 2 - r - 2);
-
-                        node.__bckgDimensions = bckgDimensions;
-                    })
-                    .nodePointerAreaPaint((node, color, ctx) => {
-                        ctx.fillStyle = color;
-                        const bckgDimensions = node.__bckgDimensions;
-                        bckgDimensions && ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y - 12 - 5, bckgDimensions[0], bckgDimensions[1]);
-                    })
-                    .linkColor(link => link.weight < 0 ? '#ff0055' : '#333333')
-                    .linkWidth(link => Math.abs(link.weight || 0.5) * 3)
-                    .linkDirectionalParticles(3)
-                    .linkDirectionalParticleSpeed(link => Math.abs(link.weight || 0.5) * 0.02)
-                    .onNodeClick(node => {
-                        if (!selectedSource) setSource(node.id, node.name);
-                        else if (!selectedTarget) setTarget(node.id, node.name);
-                    });
-
-                // Auto-refresh layout occasionally
-                setInterval(() => {
-                    graph.graphData(graph.graphData());
-                }, 5000);
-
-                // Initial Data
-                brain.add_concept("LoomDB", "Motor de memória estrita");
-                brain.add_concept("Rust", "Segurança de memória nativa");
-
-                // Boost "LoomDB" to create some initial stability
-                const loomResults = JSON.parse(brain.search("LoomDB"));
-                if (loomResults.length > 0) {
-                    const nodeInfo = JSON.parse(brain.get_node_info(loomResults[0][0]));
-                    const type = Object.keys(nodeInfo)[0];
-                    const uuid = nodeInfo[type][0].id;
-                    brain.stimulate(uuid, 1.0);
-                }
-
-                document.getElementById('status-bar').innerText = "STATUS: NÚCLEO ATIVO";
-                updateUI();
-            } catch (err) {
-                console.error("Initialization Failed:", err);
-                document.getElementById('status-bar').innerText = "STATUS: ERROR";
-            }
-        }
-
-        window.updateUI = () => {
-            search();
-            updateGraph();
-        }
-
-        function updateGraph() {
-            if (!brain) return;
-            const backup = brain.export_backup();
-            const data = JSON.parse(backup);
-
-            const colors = { 'Concept': '#00ff9d', 'Episode': '#00d4ff', 'State': '#ff0055' };
-
-            const gData = {
-                nodes: data.nodes.map(n => {
-                    const type = Object.keys(n)[0];
-                    const content = n[type];
-                    const meta = content[0];
-                    const body = content[1];
-                    return {
-                        id: meta.id,
-                        name: type === 'Concept' ? body.name : (type === 'Episode' ? body.summary : 'State'),
-                        type: type,
-                        activation: meta.activation,
-                        stability: meta.stability,
-                        color: colors[type] || '#ffffff'
-                    };
-                }),
-                links: data.edges.map(e => {
-                    const type = Object.keys(e)[0];
-                    const d = e[type];
-                    return { source: d[0], target: d[1], weight: d[2] || 0.5 };
+                        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                        ctx.fillText(label, node.x, node.y + r + fontSize + 2);
+                    }
                 })
-            };
-
-            graph.graphData(gData);
+                .linkDirectionalParticles(2)
+                .linkDirectionalParticleSpeed(d => Math.abs(d.weight) * 0.01)
+                .linkWidth(d => Math.abs(d.weight) * 2)
+                .linkColor(d => d.weight < 0 ? '#ff004c' : '#333')
+                .onNodeClick(node => {
+                    handleSelection(node);
+                })
+                .nodeColor(node => {
+                    if (selectedSource && node.id === selectedSource.id) return '#ffffff'; // White for Source
+                    if (selectedTarget && node.id === selectedTarget.id) return '#00ff9d'; // Primary for Target
+                    return node.color;
+                });
         }
 
-        window.setSource = (id, name) => {
-            selectedSource = id;
-            sourceName = name;
-            document.getElementById('lblSource').innerText = name;
+        function handleSelection(node) {
+            if (!selectedSource) {
+                selectedSource = node;
+                document.getElementById('sourceName').innerText = node.name;
+                document.getElementById('selectionPanel').classList.add('active');
+            } else if (selectedSource.id !== node.id) {
+                selectedTarget = node;
+                document.getElementById('targetName').innerText = node.name;
+            }
+            updateUI(); // Force color refresh
         }
 
-        window.setTarget = (id, name) => {
-            selectedTarget = id;
-            targetName = name;
-            document.getElementById('lblTarget').innerText = name;
+        window.cancelSelection = () => {
+            selectedSource = null;
+            selectedTarget = null;
+            document.getElementById('selectionPanel').classList.remove('active');
+            document.getElementById('targetName').innerText = "Alvo";
         }
 
-        window.executeConnection = () => {
-            if (!selectedSource || !selectedTarget) return;
-            const weight = parseFloat(document.getElementById('connWeight').value);
-            if (brain.connect(selectedSource, selectedTarget, weight)) {
-                selectedSource = null; selectedTarget = null;
-                document.getElementById('lblSource').innerText = "---";
-                document.getElementById('lblTarget').innerText = "---";
+        window.confirmConnection = () => {
+            if (selectedSource && selectedTarget) {
+                const w = parseFloat(document.getElementById('connWeight').value);
+                brain.connect(selectedSource.id, selectedTarget.id, w);
+                cancelSelection();
                 updateUI();
             }
-        };
+        }
 
-        window.stimulate = (id) => {
-            brain.stimulate(id, 0.8);
+        window.addConcept = () => {
+            const n = document.getElementById('nodeName');
+            const c = document.getElementById('nodeContent');
+            if (n.value) {
+                brain.add_concept(n.value, c.value);
+                n.value = ''; c.value = '';
+                updateUI();
+            }
+        }
+
+        window.runDream = () => {
+            const report = brain.dream();
+            pushThought(report);
             updateUI();
         }
 
         window.prune = () => {
-            const removed = brain.prune_low_stability(1.5);
-            alert(`Poda concluída. ${removed} memórias instáveis removidas.`);
+            const count = brain.prune_low_stability(1.2);
+            pushThought(`PRUNE_COMPLETE: ${count} nodes removed.`);
             updateUI();
         }
 
-        window.addConcept = () => {
-            const n = document.getElementById('conceptName');
-            const d = document.getElementById('conceptDef');
-            if (n.value && d.value) {
-                brain.add_concept(n.value, d.value);
-                n.value = ""; d.value = "";
-                updateUI();
-            }
-        };
+        function pushThought(text) {
+            const stream = document.getElementById('thoughtStream');
+            stream.innerText = `_ ${text.toUpperCase()}`;
+        }
 
-        window.search = () => {
-            const query = document.getElementById('searchInput').value;
-            const area = document.getElementById('resultsArea');
-            area.innerHTML = "";
+        window.updateUI = () => {
+            const data = JSON.parse(brain.export_backup());
+            document.getElementById('hudNodes').innerText = Object.keys(data.nodes).length;
 
-            const results = JSON.parse(brain.search(query || " "));
-
-            results.forEach(([index, activation]) => {
-                const node = JSON.parse(brain.get_node_info(index));
+            // Sync Graph
+            const gNodes = Object.entries(data.nodes).map(([id, node]) => {
                 const type = Object.keys(node)[0];
                 const meta = node[type][0];
-                const body = node[type][1];
-                const uuid = meta.id;
+                const content = node[type][1];
+                return {
+                    id: id,
+                    name: content.name || content.summary || "State",
+                    type: type,
+                    activation: meta.activation,
+                    stability: meta.stability,
+                    color: type === 'Concept' ? '#00ff9d' : (type === 'Episode' ? '#7000ff' : '#ff004c')
+                };
+            });
 
-                const title = type === "Concept" ? body.name : (type === "Episode" ? "Episódio" : "Estado");
-                const content = type === "Concept" ? body.definition : (type === "Episode" ? body.summary : "");
+            const gLinks = [];
+            Object.entries(data.adjacency).forEach(([sourceId, connections]) => {
+                connections.forEach(conn => {
+                    gLinks.push({
+                        source: sourceId,
+                        target: conn.target,
+                        weight: conn.weight
+                    });
+                });
+            });
+
+            graph.graphData({ nodes: gNodes, links: gLinks });
+            search(); // Update right panel
+        }
+
+        window.search = () => {
+            const query = document.getElementById('searchBar').value;
+            const results = JSON.parse(brain.search(query || " "));
+            const container = document.getElementById('memoryScroll');
+            container.innerHTML = '';
+
+            results.forEach(([id, activation]) => {
+                const nodeStr = brain.get_node_info(id);
+                const node = JSON.parse(nodeStr);
+                const type = Object.keys(node)[0];
+                const meta = node[type][0];
+                const content = node[type][1];
 
                 const card = document.createElement('div');
-                card.className = 'memory-card';
+                card.className = 'node-card';
+                card.onclick = () => {
+                    brain.stimulate(id, 0.8);
+                    updateUI();
+                };
+
                 card.innerHTML = `
-                    <div class="meta">
-                        <span>${type}</span>
-                        <span>⚡ ${activation.toFixed(4)} | 🛡️ ${meta.stability.toFixed(2)}</span>
-                    </div>
-                    <div style="font-weight:bold; color:var(--primary); font-size: 1.1em; margin-bottom: 5px;">${title}</div>
-                    <div style="color: #bbb;">${content}</div>
-                    <div class="uuid">${uuid}</div>
-                    
-                    <div class="actions">
-                        <button class="btn-mini btn-source" onclick="setSource('${uuid}', '${title}')">Origem</button>
-                        <button class="btn-mini btn-target" onclick="setTarget('${uuid}', '${title}')">Destino</button>
-                        <button class="btn-mini btn-stimulate" onclick="stimulate('${uuid}')">⚡</button>
+                    <div class="node-type-tag tag-${type.toLowerCase()}">${type}</div>
+                    <div class="node-title">${content.name || content.summary || 'State'}</div>
+                    <div class="node-desc">${content.definition || ''}</div>
+                    <div class="stat-bar"><div class="stat-fill" style="width: ${activation * 100}%"></div></div>
+                    <div class="node-stats">
+                        <div class="stat-item" title="Ativação (Força da Memória)">
+                            <i data-lucide="zap"></i> ${activation.toFixed(3)} <span style="font-size: 0.8em; color: var(--text-dim)">PULSE</span>
+                        </div>
+                        <div class="stat-item" title="Estabilidade (LTP / Longevidade)">
+                            <i data-lucide="shield"></i> ${meta.stability.toFixed(2)} <span style="font-size: 0.8em; color: var(--text-dim)">STABLE</span>
+                        </div>
                     </div>
                 `;
-                area.appendChild(card);
+                container.appendChild(card);
             });
+            lucide.createIcons();
+        }
+
+        window.handleAgent = (e) => {
+            if (e.key === 'Enter') {
+                const val = e.target.value.toLowerCase();
+                e.target.value = '';
+
+                if (val.includes("sono") || val.includes("dream")) {
+                    runDream();
+                } else if (val.includes("poda") || val.includes("prune")) {
+                    prune();
+                } else {
+                    pushThought("UNKNOWN_COMMAND_REJECTED");
+                }
+            }
         }
 
         start();

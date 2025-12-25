@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoomDB 🧠 Neural Interface</title>
+    <script src="https://unpkg.com/force-graph"></script>
+    <style>
+        :root {
+            --bg: #0d0d12;
+            --panel: #1a1a24;
+            --primary: #00ff9d;
+            --accent: #ff0055;
+            --text: #e0e0e0;
+            --border: #333;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            gap: 20px;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .panel {
+            background: var(--panel);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .panel-side {
+            width: 350px;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+
+        .panel-main {
+            flex: 1;
+            position: relative;
+            background: #000;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        h2,
+        h3 {
+            color: var(--primary);
+            margin-top: 0;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 12px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        input,
+        button {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 12px;
+            background: #08080c;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        button {
+            background: var(--primary);
+            color: #000;
+            font-weight: 900;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            filter: brightness(1.2);
+            transform: scale(1.02);
+        }
+
+        .connection-zone {
+            background: #14141d;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 1px dashed #555;
+        }
+
+        .conn-slot {
+            font-size: 0.85em;
+            color: #999;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .conn-filled {
+            color: var(--primary);
+            font-weight: bold;
+            text-align: right;
+        }
+
+        .memory-card {
+            background: #050508;
+            border-left: 4px solid var(--primary);
+            padding: 16px;
+            margin-bottom: 16px;
+            font-size: 0.9em;
+            border-radius: 4px 10px 10px 4px;
+            border: 1px solid #222;
+        }
+
+        .meta {
+            color: #666;
+            font-size: 0.75em;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .uuid {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 0.65em;
+            color: #333;
+            margin-top: 10px;
+            word-break: break-all;
+            background: #000;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .btn-mini {
+            padding: 8px 12px;
+            font-size: 0.75em;
+            width: auto;
+            margin: 0;
+            flex: 1;
+        }
+
+        .btn-source {
+            background: #222;
+            color: #fff;
+            border: 1px solid #444;
+        }
+
+        .btn-target {
+            background: #222;
+            color: #fff;
+            border: 1px solid #444;
+        }
+
+        .btn-stimulate {
+            background: var(--accent);
+            color: white;
+            border: none;
+        }
+
+        #graph-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        .graph-label {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            pointer-events: none;
+            color: var(--primary);
+            font-weight: 900;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            letter-spacing: 4px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--primary);
+            box-shadow: 0 0 20px rgba(0, 255, 157, 0.2);
+            z-index: 10;
+        }
+
+        #status-bar {
+            color: #555;
+            font-size: 11px;
+            font-family: monospace;
+            margin-top: auto;
+            padding-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="panel panel-side">
+        <h2>📥 Controle</h2>
+        <h3>Novo Dado</h3>
+        <input type="text" id="conceptName" placeholder="Nome do Conceito">
+        <input type="text" id="conceptDef" placeholder="Definição/Explicação">
+        <button onclick="addConcept()">Criar Conceito</button>
+
+        <h3>🔗 Sinapse</h3>
+        <div class="connection-zone">
+            <div class="conn-slot">Origem: <span id="lblSource" class="conn-filled">---</span></div>
+            <div class="conn-slot">Destino: <span id="lblTarget" class="conn-filled">---</span></div>
+            <div class="conn-slot" style="margin-top:5px;">
+                <span>Peso: </span>
+                <input type="number" id="connWeight" value="0.9" step="0.1"
+                    style="width: 70px; padding: 5px; margin: 0; background: #000; border: 1px solid #444; color: #00ff9d;">
+            </div>
+            <button onclick="executeConnection()" style="margin-top:10px;">Unir Neurônios</button>
+        </div>
+
+        <button onclick="updateUI()"
+            style="background: #222; color: var(--primary); border: 1px solid var(--primary); margin-bottom: 8px;">🔄
+            Sincronizar DB</button>
+        <button onclick="prune()" style="background: #222; color: var(--accent); border: 1px solid var(--accent);">🧹
+            Podar Ruído</button>
+
+        <div id="status-bar" style="margin-top: 15px;">STATUS: STANDBY</div>
+    </div>
+
+    <div class="panel panel-main">
+        <div class="graph-label">Rede Neural Ativa</div>
+        <div id="graph-container"></div>
+    </div>
+
+    <div class="panel panel-side">
+        <h2>🧠 Memória</h2>
+        <input type="text" id="searchInput" placeholder="Buscar no Córtex..." onkeyup="search()">
+        <div id="resultsArea" style="flex: 1; overflow-y: auto;"></div>
+    </div>
+
+    <script type="module">
+        import init, { LoomGraph } from './pkg/loom_db.js';
+
+        let brain;
+        let graph;
+        let selectedSource = null;
+        let selectedTarget = null;
+        let sourceName = "";
+        let targetName = "";
+
+        async function start() {
+            try {
+                await init();
+                brain = new LoomGraph(0.95);
+                console.log("WASM Initialized");
+
+                const elem = document.getElementById('graph-container');
+                graph = ForceGraph()(elem)
+                    .backgroundColor('#000000')
+                    .nodeColor(node => {
+                        const types = { 'Concept': '#00ff9d', 'Episode': '#00d4ff', 'State': '#ff0055' };
+                        return types[node.type] || '#ffffff';
+                    })
+                    .nodeCanvasObject((node, ctx, globalScale) => {
+                        const label = node.name;
+                        const fontSize = 12 / globalScale;
+                        ctx.font = `${fontSize}px Inter, system-ui`;
+                        const textWidth = ctx.measureText(label).width;
+                        const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2); // some padding
+
+                        // Node Stability Glow (Halo)
+                        if (node.stability > 1.2) {
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, (node.activation * 10 + 6) / globalScale, 0, 2 * Math.PI, false);
+                            ctx.fillStyle = node.color + '22'; // Very transparent glow
+                            ctx.fill();
+                        }
+
+                        // Draw Node Circle
+                        const r = Math.max(4, (node.activation || 0) * 8 + 2);
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+                        ctx.fillStyle = node.color;
+                        ctx.fill();
+
+                        // Stability Border (Inner circle)
+                        if (node.stability > 2.0) {
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, r * 0.6, 0, 2 * Math.PI, false);
+                            ctx.strokeStyle = '#fff';
+                            ctx.lineWidth = 1 / globalScale;
+                            ctx.stroke();
+                        }
+
+                        // Draw Label
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                        ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y - fontSize - r - 2, bckgDimensions[0], bckgDimensions[1]);
+
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = node.color;
+                        ctx.fillText(label, node.x, node.y - fontSize / 2 - r - 2);
+
+                        node.__bckgDimensions = bckgDimensions;
+                    })
+                    .nodePointerAreaPaint((node, color, ctx) => {
+                        ctx.fillStyle = color;
+                        const bckgDimensions = node.__bckgDimensions;
+                        bckgDimensions && ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y - 12 - 5, bckgDimensions[0], bckgDimensions[1]);
+                    })
+                    .linkColor(link => link.weight < 0 ? '#ff0055' : '#333333')
+                    .linkWidth(link => Math.abs(link.weight || 0.5) * 3)
+                    .linkDirectionalParticles(3)
+                    .linkDirectionalParticleSpeed(link => Math.abs(link.weight || 0.5) * 0.02)
+                    .onNodeClick(node => {
+                        if (!selectedSource) setSource(node.id, node.name);
+                        else if (!selectedTarget) setTarget(node.id, node.name);
+                    });
+
+                // Auto-refresh layout occasionally
+                setInterval(() => {
+                    graph.graphData(graph.graphData());
+                }, 5000);
+
+                // Initial Data
+                brain.add_concept("LoomDB", "Motor de memória estrita");
+                brain.add_concept("Rust", "Segurança de memória nativa");
+
+                // Boost "LoomDB" to create some initial stability
+                const loomResults = JSON.parse(brain.search("LoomDB"));
+                if (loomResults.length > 0) {
+                    const nodeInfo = JSON.parse(brain.get_node_info(loomResults[0][0]));
+                    const type = Object.keys(nodeInfo)[0];
+                    const uuid = nodeInfo[type][0].id;
+                    brain.stimulate(uuid, 1.0);
+                }
+
+                document.getElementById('status-bar').innerText = "STATUS: NÚCLEO ATIVO";
+                updateUI();
+            } catch (err) {
+                console.error("Initialization Failed:", err);
+                document.getElementById('status-bar').innerText = "STATUS: ERROR";
+            }
+        }
+
+        window.updateUI = () => {
+            search();
+            updateGraph();
+        }
+
+        function updateGraph() {
+            if (!brain) return;
+            const backup = brain.export_backup();
+            const data = JSON.parse(backup);
+
+            const colors = { 'Concept': '#00ff9d', 'Episode': '#00d4ff', 'State': '#ff0055' };
+
+            const gData = {
+                nodes: data.nodes.map(n => {
+                    const type = Object.keys(n)[0];
+                    const content = n[type];
+                    const meta = content[0];
+                    const body = content[1];
+                    return {
+                        id: meta.id,
+                        name: type === 'Concept' ? body.name : (type === 'Episode' ? body.summary : 'State'),
+                        type: type,
+                        activation: meta.activation,
+                        stability: meta.stability,
+                        color: colors[type] || '#ffffff'
+                    };
+                }),
+                links: data.edges.map(e => {
+                    const type = Object.keys(e)[0];
+                    const d = e[type];
+                    return { source: d[0], target: d[1], weight: d[2] || 0.5 };
+                })
+            };
+
+            graph.graphData(gData);
+        }
+
+        window.setSource = (id, name) => {
+            selectedSource = id;
+            sourceName = name;
+            document.getElementById('lblSource').innerText = name;
+        }
+
+        window.setTarget = (id, name) => {
+            selectedTarget = id;
+            targetName = name;
+            document.getElementById('lblTarget').innerText = name;
+        }
+
+        window.executeConnection = () => {
+            if (!selectedSource || !selectedTarget) return;
+            const weight = parseFloat(document.getElementById('connWeight').value);
+            if (brain.connect(selectedSource, selectedTarget, weight)) {
+                selectedSource = null; selectedTarget = null;
+                document.getElementById('lblSource').innerText = "---";
+                document.getElementById('lblTarget').innerText = "---";
+                updateUI();
+            }
+        };
+
+        window.stimulate = (id) => {
+            brain.stimulate(id, 0.8);
+            updateUI();
+        }
+
+        window.prune = () => {
+            const removed = brain.prune_low_stability(1.5);
+            alert(`Poda concluída. ${removed} memórias instáveis removidas.`);
+            updateUI();
+        }
+
+        window.addConcept = () => {
+            const n = document.getElementById('conceptName');
+            const d = document.getElementById('conceptDef');
+            if (n.value && d.value) {
+                brain.add_concept(n.value, d.value);
+                n.value = ""; d.value = "";
+                updateUI();
+            }
+        };
+
+        window.search = () => {
+            const query = document.getElementById('searchInput').value;
+            const area = document.getElementById('resultsArea');
+            area.innerHTML = "";
+
+            const results = JSON.parse(brain.search(query || " "));
+
+            results.forEach(([index, activation]) => {
+                const node = JSON.parse(brain.get_node_info(index));
+                const type = Object.keys(node)[0];
+                const meta = node[type][0];
+                const body = node[type][1];
+                const uuid = meta.id;
+
+                const title = type === "Concept" ? body.name : (type === "Episode" ? "Episódio" : "Estado");
+                const content = type === "Concept" ? body.definition : (type === "Episode" ? body.summary : "");
+
+                const card = document.createElement('div');
+                card.className = 'memory-card';
+                card.innerHTML = `
+                    <div class="meta">
+                        <span>${type}</span>
+                        <span>⚡ ${activation.toFixed(4)} | 🛡️ ${meta.stability.toFixed(2)}</span>
+                    </div>
+                    <div style="font-weight:bold; color:var(--primary); font-size: 1.1em; margin-bottom: 5px;">${title}</div>
+                    <div style="color: #bbb;">${content}</div>
+                    <div class="uuid">${uuid}</div>
+                    
+                    <div class="actions">
+                        <button class="btn-mini btn-source" onclick="setSource('${uuid}', '${title}')">Origem</button>
+                        <button class="btn-mini btn-target" onclick="setTarget('${uuid}', '${title}')">Destino</button>
+                        <button class="btn-mini btn-stimulate" onclick="stimulate('${uuid}')">⚡</button>
+                    </div>
+                `;
+                area.appendChild(card);
+            });
+        }
+
+        start();
+    </script>
+</body>
+
+</html>
