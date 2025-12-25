@@ -14,6 +14,7 @@ use wasm_bindgen::prelude::*;
 pub struct NodeMetadata {
     pub id: Uuid,
     pub activation: f32,
+    pub stability: f32, // LTP factor
     pub last_tick: u64,
 }
 
@@ -22,6 +23,7 @@ impl NodeMetadata {
         Self {
             id: Uuid::new_v4(),
             activation: 1.0,
+            stability: 1.0,
             last_tick: 0,
         }
     }
@@ -258,6 +260,39 @@ impl LoomGraph {
         }
         false
     }
+
+    #[wasm_bindgen]
+    pub fn prune_low_stability(&mut self, threshold: f32) -> usize {
+        let before = self.nodes.len();
+        
+        // Find nodes that are both low stability and low activation (safe to prune)
+        let to_remove: Vec<Uuid> = self.nodes.iter()
+            .filter(|n| n.meta().stability < threshold && n.meta().activation < 0.1)
+            .map(|n| n.meta().id)
+            .collect();
+
+        if to_remove.is_empty() { return 0; }
+
+        for id in to_remove {
+            self.nodes.retain(|n| n.meta().id != id);
+            self.edges.retain(|e| {
+                match e {
+                    Edge::Preceded(s, t) | Edge::Mentioned(s, t) | Edge::Evoked(s, t) | Edge::Associated(s, t, _) | Edge::Inhibited(s, t, _) => *s != id && *t != id
+                }
+            });
+        }
+
+        self.rebuild_node_map();
+        let after = self.nodes.len();
+        before - after
+    }
+
+    fn rebuild_node_map(&mut self) {
+        self.node_map.clear();
+        for (idx, node) in self.nodes.iter().enumerate() {
+            self.node_map.insert(node.meta().id, idx);
+        }
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -336,7 +371,10 @@ impl LoomGraph {
 
         if meta.last_tick < tick_now {
             let delta_t = (tick_now - meta.last_tick) as i32;
-            meta.activation *= decay.powi(delta_t);
+            // Stability acts as a decay dampener. 
+            // Real decay = decay^(delta_t / stability)
+            let effective_decay = decay.powf(delta_t as f32 / meta.stability);
+            meta.activation *= effective_decay;
             meta.last_tick = tick_now;
         }
         meta.activation
@@ -345,19 +383,43 @@ impl LoomGraph {
     pub fn boost_node(&mut self, node_idx: usize, amount: f32, propagate: bool) {
         let current_activation = self.get_activation(node_idx);
         let meta = self.nodes[node_idx].meta_mut();
+        
+        // Asymptotic boost
         let real_boost = (1.0 - current_activation) * amount;
         meta.activation += real_boost;
+        
+        // LTP: Boosting helps stabilize the memory
+        // Stability grows asymptotically towards a high cap (e.g., 50.0)
+        let stability_gain = amount * 0.1; 
+        meta.stability += (50.0 - meta.stability) * stability_gain;
+
         meta.last_tick = self.current_tick;
         
         if propagate {
             let node_id = meta.id;
+            // Capture nodes and mapping to avoid borrow conflicts during recursion if we were using indices
+            // But we use UUIDs + loop over cloned edges which is safe but slightly slow. 
+            // For WASM scale it's fine.
             let edges_snapshot = self.edges.clone(); 
             for edge in edges_snapshot {
                 if let Edge::Associated(source, target, weight) = edge {
                     if source == node_id {
                         if let Some(&neighbor_idx) = self.node_map.get(&target) {
+                            // Ripple effect is proportional to boost and edge weight
+                            // Weight can now be negative (Inhibition)
                             let ripple_effect = amount * weight * 0.5;
-                            self.boost_node(neighbor_idx, ripple_effect, false);
+                            
+                            if ripple_effect > 0.0 {
+                                self.boost_node(neighbor_idx, ripple_effect, false);
+                            } else if ripple_effect < 0.0 {
+                                // Suppression logic
+                                let updated_node = &mut self.nodes[neighbor_idx];
+                                let n_meta = updated_node.meta_mut();
+                                
+                                // Reduce activation by the negative ripple
+                                n_meta.activation = (n_meta.activation + ripple_effect).max(0.0);
+                                n_meta.last_tick = self.current_tick;
+                            }
                         }
                     }
                 }
@@ -367,7 +429,7 @@ impl LoomGraph {
 
     pub fn get_context_prompt(&mut self, min_activation: f32) -> String {
         let mut buffer = String::new();
-        buffer.push_str("<current_state>\n");
+        buffer.push_str("<active_memories>\n");
         
         let mut active_indices: Vec<usize> = (0..self.nodes.len())
             .filter(|&idx| self.get_activation(idx) > min_activation)
@@ -388,28 +450,29 @@ impl LoomGraph {
                 match node {
                     Node::Concept(_, data) => {
                         buffer.push_str(&format!(
-                            "  <memory type='concept' activation='{:.2}'>\n    <name>{}</name>\n    <definition>{}</definition>\n  </memory>\n",
-                            meta.activation, data.name, data.definition
+                            "  <memory type='concept' activation='{:.2}' stability='{:.2}'>\n    <name>{}</name>\n    <definition>{}</definition>\n  </memory>\n",
+                            meta.activation, meta.stability, data.name, data.definition
                         ));
                     },
                     Node::Episode(_, data) => {
                         buffer.push_str(&format!(
-                            "  <memory type='episode' activation='{:.2}' time='{}'>\n    <summary>{}</summary>\n  </memory>\n",
-                            meta.activation, data.timestamp.to_rfc3339(), data.summary
+                            "  <memory type='episode' activation='{:.2}' stability='{:.2}' time='{}'>\n    <summary>{}</summary>\n  </memory>\n",
+                            meta.activation, meta.stability, data.timestamp.to_rfc3339(), data.summary
                         ));
                     },
                     Node::State(_, data) => {
                         buffer.push_str(&format!(
-                            "  <state activation='{:.2}'>\n    <mood valence='{:.2}' arousal='{:.2}' />\n  </state>\n",
-                            meta.activation, data.valence, data.arousal
+                            "  <state activation='{:.2}' stability='{:.2}'>\n    <mood valence='{:.2}' arousal='{:.2}' />\n  </state>\n",
+                            meta.activation, meta.stability, data.valence, data.arousal
                         ));
                     }
                 }
             }
         }
-        buffer.push_str("</current_state>");
+        buffer.push_str("</active_memories>");
         buffer
     }
+
 
     // Persistência CLI (Desktop)
     pub fn save_to_file(&mut self, filepath: &str) -> std::io::Result<()> {

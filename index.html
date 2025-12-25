@@ -224,14 +224,21 @@
         <div class="connection-zone">
             <div class="conn-slot">Origem: <span id="lblSource" class="conn-filled">---</span></div>
             <div class="conn-slot">Destino: <span id="lblTarget" class="conn-filled">---</span></div>
-            <button onclick="executeConnection()" style="margin-top:5px;">Unir Neurônios</button>
+            <div class="conn-slot" style="margin-top:5px;">
+                <span>Peso: </span>
+                <input type="number" id="connWeight" value="0.9" step="0.1"
+                    style="width: 70px; padding: 5px; margin: 0; background: #000; border: 1px solid #444; color: #00ff9d;">
+            </div>
+            <button onclick="executeConnection()" style="margin-top:10px;">Unir Neurônios</button>
         </div>
 
         <button onclick="updateUI()"
-            style="background: #222; color: var(--primary); border: 1px solid var(--primary);">🔄 Sincronizar
-            DB</button>
+            style="background: #222; color: var(--primary); border: 1px solid var(--primary); margin-bottom: 8px;">🔄
+            Sincronizar DB</button>
+        <button onclick="prune()" style="background: #222; color: var(--accent); border: 1px solid var(--accent);">🧹
+            Podar Ruído</button>
 
-        <div id="status-bar">STATUS: STANDBY</div>
+        <div id="status-bar" style="margin-top: 15px;">STATUS: STANDBY</div>
     </div>
 
     <div class="panel panel-main">
@@ -275,12 +282,29 @@
                         const textWidth = ctx.measureText(label).width;
                         const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2); // some padding
 
+                        // Node Stability Glow (Halo)
+                        if (node.stability > 1.2) {
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, (node.activation * 10 + 6) / globalScale, 0, 2 * Math.PI, false);
+                            ctx.fillStyle = node.color + '22'; // Very transparent glow
+                            ctx.fill();
+                        }
+
                         // Draw Node Circle
                         const r = Math.max(4, (node.activation || 0) * 8 + 2);
                         ctx.beginPath();
                         ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
                         ctx.fillStyle = node.color;
                         ctx.fill();
+
+                        // Stability Border (Inner circle)
+                        if (node.stability > 2.0) {
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, r * 0.6, 0, 2 * Math.PI, false);
+                            ctx.strokeStyle = '#fff';
+                            ctx.lineWidth = 1 / globalScale;
+                            ctx.stroke();
+                        }
 
                         // Draw Label
                         ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
@@ -291,17 +315,17 @@
                         ctx.fillStyle = node.color;
                         ctx.fillText(label, node.x, node.y - fontSize / 2 - r - 2);
 
-                        node.__bckgDimensions = bckgDimensions; // to re-use in nodePointerAreaPaint
+                        node.__bckgDimensions = bckgDimensions;
                     })
                     .nodePointerAreaPaint((node, color, ctx) => {
                         ctx.fillStyle = color;
                         const bckgDimensions = node.__bckgDimensions;
                         bckgDimensions && ctx.fillRect(node.x - bckgDimensions[0] / 2, node.y - 12 - 5, bckgDimensions[0], bckgDimensions[1]);
                     })
-                    .linkColor(() => '#333333')
-                    .linkWidth(2)
+                    .linkColor(link => link.weight < 0 ? '#ff0055' : '#333333')
+                    .linkWidth(link => Math.abs(link.weight || 0.5) * 3)
                     .linkDirectionalParticles(3)
-                    .linkDirectionalParticleSpeed(0.01)
+                    .linkDirectionalParticleSpeed(link => Math.abs(link.weight || 0.5) * 0.02)
                     .onNodeClick(node => {
                         if (!selectedSource) setSource(node.id, node.name);
                         else if (!selectedTarget) setTarget(node.id, node.name);
@@ -309,12 +333,21 @@
 
                 // Auto-refresh layout occasionally
                 setInterval(() => {
-                    graph.tickFrame();
-                }, 100);
+                    graph.graphData(graph.graphData());
+                }, 5000);
 
                 // Initial Data
                 brain.add_concept("LoomDB", "Motor de memória estrita");
                 brain.add_concept("Rust", "Segurança de memória nativa");
+
+                // Boost "LoomDB" to create some initial stability
+                const loomResults = JSON.parse(brain.search("LoomDB"));
+                if (loomResults.length > 0) {
+                    const nodeInfo = JSON.parse(brain.get_node_info(loomResults[0][0]));
+                    const type = Object.keys(nodeInfo)[0];
+                    const uuid = nodeInfo[type][0].id;
+                    brain.stimulate(uuid, 1.0);
+                }
 
                 document.getElementById('status-bar').innerText = "STATUS: NÚCLEO ATIVO";
                 updateUI();
@@ -324,7 +357,7 @@
             }
         }
 
-        function updateUI() {
+        window.updateUI = () => {
             search();
             updateGraph();
         }
@@ -333,8 +366,6 @@
             if (!brain) return;
             const backup = brain.export_backup();
             const data = JSON.parse(backup);
-
-            console.log("Refreshing graph with", data.nodes.length, "nodes");
 
             const colors = { 'Concept': '#00ff9d', 'Episode': '#00d4ff', 'State': '#ff0055' };
 
@@ -349,6 +380,7 @@
                         name: type === 'Concept' ? body.name : (type === 'Episode' ? body.summary : 'State'),
                         type: type,
                         activation: meta.activation,
+                        stability: meta.stability,
                         color: colors[type] || '#ffffff'
                     };
                 }),
@@ -376,7 +408,8 @@
 
         window.executeConnection = () => {
             if (!selectedSource || !selectedTarget) return;
-            if (brain.connect(selectedSource, selectedTarget, 0.9)) {
+            const weight = parseFloat(document.getElementById('connWeight').value);
+            if (brain.connect(selectedSource, selectedTarget, weight)) {
                 selectedSource = null; selectedTarget = null;
                 document.getElementById('lblSource').innerText = "---";
                 document.getElementById('lblTarget').innerText = "---";
@@ -386,6 +419,12 @@
 
         window.stimulate = (id) => {
             brain.stimulate(id, 0.8);
+            updateUI();
+        }
+
+        window.prune = () => {
+            const removed = brain.prune_low_stability(1.5);
+            alert(`Poda concluída. ${removed} memórias instáveis removidas.`);
             updateUI();
         }
 
@@ -421,7 +460,7 @@
                 card.innerHTML = `
                     <div class="meta">
                         <span>${type}</span>
-                        <span style="color:var(--primary)">⚡ ${activation.toFixed(4)}</span>
+                        <span>⚡ ${activation.toFixed(4)} | 🛡️ ${meta.stability.toFixed(2)}</span>
                     </div>
                     <div style="font-weight:bold; color:var(--primary); font-size: 1.1em; margin-bottom: 5px;">${title}</div>
                     <div style="color: #bbb;">${content}</div>
