@@ -1,3 +1,26 @@
+//! # LoomDB
+//!
+//! A strict-schema, bio-inspired graph memory engine for AI agents.
+//! LoomDB is designed to mimic the human brain's memory mechanics, including:
+//! - **Forgetting Curve**: Memories decay over time if not accessed.
+//! - **Spread Activation**: Activation flows from one memory to related memories.
+//! - **Strict Typing**: Distinguishes between Episodes, Concepts, and Emotional States.
+//!
+//! ## Example
+//!
+//! ```rust
+//! use loom_db::{LoomGraph, Node, NodeMetadata, ConceptData, Edge};
+//!
+//! // 1. Initialize the Brain
+//! let mut brain = LoomGraph::new(0.95);
+//!
+//! // 2. Add a concept
+//! brain.add_concept("Rust".to_string(), "Systems Language".to_string());
+//!
+//! // 3. Time passes
+//! brain.tick();
+//! ```
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -10,15 +33,23 @@ use wasm_bindgen::prelude::*;
 // 1. THE GRID (Schemas & Structs)
 // ============================================================================
 
+/// Metadata shared by all node types.
+/// Tracks the "energy" and "strength" of a memory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeMetadata {
+    /// Unique identifier for the node.
     pub id: Uuid,
+    /// Current activation level (0.0 to 1.0). High activation = "top of mind".
     pub activation: f32,
-    pub stability: f32, // LTP factor
+    /// Long-term stability factor. Higher stability = slower decay.
+    /// Simulates Long-Term Potentiation (LTP).
+    pub stability: f32,
+    /// The last tick when this node was accessed or updated.
     pub last_tick: u64,
 }
 
 impl NodeMetadata {
+    /// Creates a new metadata instance with full activation and default stability.
     pub fn new() -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -29,32 +60,47 @@ impl NodeMetadata {
     }
 }
 
+/// Data specific to an episodic memory (an event that happened).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpisodeData {
+    /// A text summary of the event.
     pub summary: String,
+    /// When the event occurred (in real-world time).
     pub timestamp: DateTime<Utc>,
 }
 
+/// Data specific to a concept (semantic memory).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConceptData {
+    /// The name of the concept (e.g., "Rust").
     pub name: String,
+    /// The definition or description of the concept.
     pub definition: String,
 }
 
+/// Data specific to an emotional state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateData {
+    /// Valence: Positive vs Negative (-1.0 to 1.0).
     pub valence: f32,
+    /// Arousal: Calm vs Excited (0.0 to 1.0).
     pub arousal: f32,
 }
 
+/// The fundamental unit of memory in the graph.
+/// Can be an Episode, a Concept, or a State.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Node {
+    /// Represents a specific event in time.
     Episode(NodeMetadata, EpisodeData),
+    /// Represents general knowledge or a definition.
     Concept(NodeMetadata, ConceptData),
+    /// Represents an internal emotional state.
     State(NodeMetadata, StateData),
 }
 
 impl Node {
+    /// Returns a reference to the node's metadata.
     pub fn meta(&self) -> &NodeMetadata {
         match self {
             Node::Episode(m, _) => m,
@@ -63,6 +109,7 @@ impl Node {
         }
     }
 
+    /// Returns a mutable reference to the node's metadata.
     pub fn meta_mut(&mut self) -> &mut NodeMetadata {
         match self {
             Node::Episode(m, _) => m,
@@ -71,6 +118,8 @@ impl Node {
         }
     }
 
+    /// Extracts text content for indexing purposes.
+    /// Returns the summary for episodes, name + definition for concepts, and empty string for states.
     pub fn extract_text(&self) -> String {
         match self {
             Node::Episode(_, d) => d.summary.clone(),
@@ -80,12 +129,18 @@ impl Node {
     }
 }
 
+/// Represents a connection between two nodes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Edge {
+    /// Temporal sequence: Source happened before Target.
     Preceded(Uuid, Uuid),
+    /// Reference: Source (Episode) mentioned Target (Concept).
     Mentioned(Uuid, Uuid),
+    /// Causality: Source caused Target to be recalled.
     Evoked(Uuid, Uuid),
+    /// Semantic Association: Source is related to Target with a specific weight.
     Associated(Uuid, Uuid, f32),
+    /// Inhibition: Source suppresses Target with a specific weight.
     Inhibited(Uuid, Uuid, f32),
 }
 
@@ -93,21 +148,30 @@ pub enum Edge {
 // 2. THE ENGINE (The Loom)
 // ============================================================================
 
+/// The main graph database structure.
+/// Holds all nodes, edges, and state required for the memory simulation.
 #[wasm_bindgen]
 #[derive(Serialize, Deserialize)]
 pub struct LoomGraph {
+    /// List of all memory nodes.
     #[wasm_bindgen(skip)]
     pub nodes: Vec<Node>,
+    /// List of all connections between nodes.
     #[wasm_bindgen(skip)]
     pub edges: Vec<Edge>,
+    /// Global time counter for the simulation.
     #[wasm_bindgen(skip)]
     pub current_tick: u64,
+    /// The base rate at which memory activation decays per tick (e.g., 0.95).
     #[wasm_bindgen(skip)]
     pub decay_rate: f32,
+    /// Inverted index for text search (Word -> List of Node Indices).
     #[wasm_bindgen(skip)]
     pub index: HashMap<String, Vec<usize>>,
+    /// Map of UUID to Node Index for O(1) lookup.
     #[wasm_bindgen(skip)]
     pub node_map: HashMap<Uuid, usize>,
+    /// Timestamp of the last save/load operation, used for "wake up" calculations.
     #[wasm_bindgen(skip)]
     pub last_saved: Option<DateTime<Utc>>,
 }
@@ -117,6 +181,12 @@ pub struct LoomGraph {
 // ----------------------------------------------------------------------------
 #[wasm_bindgen]
 impl LoomGraph {
+    /// Creates a new LoomGraph with a specified decay rate.
+    ///
+    /// # Arguments
+    ///
+    /// * `decay_rate` - The factor by which activation decays each tick (0.0 to 1.0).
+    ///   Typical values are around 0.95.
     #[wasm_bindgen(constructor)]
     pub fn new(decay_rate: f32) -> Self {
         Self {
@@ -132,6 +202,8 @@ impl LoomGraph {
 
     // --- 1. CONCEITO (Conhecimento Semântico) ---
     // JS: brain.add_concept("Rust", "Linguagem segura")
+    /// Adds a new Concept node to the graph.
+    /// Returns the UUID of the new node.
     #[wasm_bindgen]
     pub fn add_concept(&mut self, name: String, definition: String) -> String {
         let node = Node::Concept(NodeMetadata::new(), ConceptData { 
@@ -146,6 +218,9 @@ impl LoomGraph {
     // --- 2. EPISÓDIO (Memória Episódica / Evento) ---
     // JS: brain.add_episode("O usuário disse que gosta de pizza")
     // Nota: O Rust preenche o timestamp automaticamente com Utc::now()
+    /// Adds a new Episode node to the graph.
+    /// Automatically sets the timestamp to the current UTC time.
+    /// Returns the UUID of the new node.
     #[wasm_bindgen]
     pub fn add_episode(&mut self, summary: String) -> String {
         let node = Node::Episode(NodeMetadata::new(), EpisodeData { 
@@ -159,6 +234,8 @@ impl LoomGraph {
 
     // --- 3. ESTADO (Emoção / Sentimento) ---
     // JS: brain.add_state(0.8, 0.5)  -> (Valence=Positive, Arousal=Medium)
+    /// Adds a new State node to the graph.
+    /// Returns the UUID of the new node.
     #[wasm_bindgen]
     pub fn add_state(&mut self, valence: f32, arousal: f32) -> String {
         let node = Node::State(NodeMetadata::new(), StateData { 
@@ -172,22 +249,30 @@ impl LoomGraph {
 
     // --- BUSCA & UTILITÁRIOS ---
 
+    /// Searches for nodes containing the query text.
+    /// Returns a JSON string representing the list of matching nodes, sorted by relevance.
     #[wasm_bindgen]
     pub fn search(&mut self, query: &str) -> String {
         let results = self.search_native(query); 
         serde_json::to_string(&results).unwrap_or("[]".to_string())
     }
 
+    /// Generates a prompt context based on active memories.
+    /// Only includes memories with activation higher than `min_activation`.
     #[wasm_bindgen]
     pub fn get_context(&mut self, min_activation: f32) -> String {
         self.get_context_prompt(min_activation)
     }
 
+    /// Advances the simulation by one tick.
+    /// This triggers decay calculations lazily when nodes are next accessed.
     #[wasm_bindgen]
     pub fn tick(&mut self) {
         self.current_tick += 1;
     }
 
+    /// Simulates the passage of time based on real-world time passed since the last save.
+    /// Updates the `current_tick` accordingly.
     #[wasm_bindgen]
     pub fn wake_up(&mut self) {
         if let Some(last_time) = self.last_saved {
@@ -203,16 +288,20 @@ impl LoomGraph {
 
     // --- PERSISTÊNCIA WEB (Import/Export Strings) ---
 
+    /// Exports the entire graph state to a JSON string.
     #[wasm_bindgen]
     pub fn export_backup(&self) -> String {
         serde_json::to_string(&self).unwrap_or("{}".to_string())
     }
 
+    /// Imports the graph state from a JSON string.
+    /// Returns a new LoomGraph instance. If parsing fails, returns a new empty graph.
     #[wasm_bindgen]
     pub fn import_backup(json: &str) -> LoomGraph {
         serde_json::from_str(json).unwrap_or_else(|_| LoomGraph::new(0.95))
     }
 
+    /// Retrieves detailed JSON info about a node by its internal index.
     #[wasm_bindgen]
     pub fn get_node_info(&self, index: usize) -> String {
         // Tenta pegar o nó pelo índice numérico
@@ -225,6 +314,8 @@ impl LoomGraph {
     }
 
     // JS chama: connect("uuid_string_a", "uuid_string_b", 0.9)
+    /// Creates an association between two nodes identified by their UUID strings.
+    /// Returns true if successful, false if IDs are invalid or not found.
     #[wasm_bindgen]
     pub fn connect(&mut self, source_id: &str, target_id: &str, weight: f32) -> bool {
         // Tenta converter as Strings recebidas para UUIDs reais
@@ -250,6 +341,9 @@ impl LoomGraph {
 
     // Vamos expor o Boost também para testarmos a reação em cadeia manualmente
     // JS chama: stimulate("uuid_string", 1.0)
+    /// Stimulates (boosts) a node by its UUID string.
+    /// This triggers spread activation to connected nodes.
+    /// Returns true if successful.
     #[wasm_bindgen]
     pub fn stimulate(&mut self, id_str: &str, force: f32) -> bool {
         if let Ok(uuid) = Uuid::parse_str(id_str) {
@@ -261,6 +355,8 @@ impl LoomGraph {
         false
     }
 
+    /// Removes nodes that have both low stability and low activation.
+    /// Returns the number of nodes removed.
     #[wasm_bindgen]
     pub fn prune_low_stability(&mut self, threshold: f32) -> usize {
         let before = self.nodes.len();
@@ -299,7 +395,8 @@ impl LoomGraph {
 // API INTERNA (Rust Only) - O "Motor" Real
 // ----------------------------------------------------------------------------
 impl LoomGraph {
-    // Método universal interno (usado pelo add_concept, add_episode, etc.)
+    /// Internal: Adds a node and indexes its text.
+    /// This is the low-level method used by `add_concept`, `add_episode`, etc.
     pub fn add_node(&mut self, node: Node) {
         let idx = self.nodes.len();
         let id = node.meta().id;
@@ -322,6 +419,8 @@ impl LoomGraph {
         self.nodes.push(n);
     }
 
+    /// Internal: Native Rust search implementation.
+    /// Returns a vector of (Node Index, Activation Score).
     pub fn search_native(&mut self, query: &str) -> Vec<(usize, f32)> {
         let clean_query = query.to_lowercase();
         let clean_query = clean_query.trim(); // Removido o shadowing desnecessário na mesma linha
@@ -363,6 +462,8 @@ impl LoomGraph {
         results
     }
 
+    /// Calculates the current activation of a node, applying decay if necessary.
+    /// This method is lazy: it updates the node's state only when accessed.
     pub fn get_activation(&mut self, node_idx: usize) -> f32 {
         let tick_now = self.current_tick;
         let decay = self.decay_rate;
@@ -380,6 +481,8 @@ impl LoomGraph {
         meta.activation
     }
 
+    /// Boosts a node's activation and optionally spreads energy to connected nodes.
+    /// Implements the "Spread Activation" and "Long-Term Potentiation" mechanics.
     pub fn boost_node(&mut self, node_idx: usize, amount: f32, propagate: bool) {
         let current_activation = self.get_activation(node_idx);
         let meta = self.nodes[node_idx].meta_mut();
@@ -427,6 +530,8 @@ impl LoomGraph {
         }
     }
 
+    /// Generates an XML string representing the current context of active memories.
+    /// This is useful for passing memory context to LLMs.
     pub fn get_context_prompt(&mut self, min_activation: f32) -> String {
         let mut buffer = String::new();
         buffer.push_str("<active_memories>\n");
@@ -475,6 +580,7 @@ impl LoomGraph {
 
 
     // Persistência CLI (Desktop)
+    /// Saves the current state of the LoomGraph to a JSON file.
     pub fn save_to_file(&mut self, filepath: &str) -> std::io::Result<()> {
         self.last_saved = Some(Utc::now());
         let file = File::create(filepath)?;
@@ -483,6 +589,7 @@ impl LoomGraph {
         Ok(())
     }
 
+    /// Loads the LoomGraph state from a JSON file.
     pub fn load_from_file(filepath: &str) -> std::io::Result<Self> {
         let file = File::open(filepath)?;
         let reader = BufReader::new(file);
