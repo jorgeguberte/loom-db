@@ -1,4 +1,4 @@
-use loom_db::{LoomGraph, Node, NodeMetadata, ConceptData};
+use loom_db::{LoomGraph};
 use std::path::Path;
 
 fn main() {
@@ -10,27 +10,25 @@ fn main() {
     if Path::new(memory_file).exists() {
         println!("📂 Carregando cérebro existente...");
         brain = LoomGraph::load_from_file(memory_file).unwrap();
-        brain.wake_up();
+        brain.wake_up(); // Atualiza tempo baseado no relógio do sistema
     } else {
         println!("✨ Criando novo cérebro (Tick 0)...");
         brain = LoomGraph::new(0.90); // Decay agressivo de 0.90
         
         // Memória Original (Gênesis)
-        brain.add_node(Node::Concept(NodeMetadata::new(), ConceptData {
-            name: "Genesis".into(),
-            definition: "Memória original.".into()
-        }));
+        brain.add_concept("Genesis".into(), "Memória original.".into());
     }
 
     // 2. MOSTRAR ESTADO ATUAL
     let tick_atual = brain.current_tick;
     println!("⏰ Tempo Atual do Cérebro: Tick {}", tick_atual);
     
-    // Mostra a ativação da memória "Genesis" (Nó 0)
-    // Se a memória existir (indices > 0), pegamos a primeira
-    if !brain.nodes.is_empty() {
-        let ativacao = brain.get_activation(0);
-        println!("📊 Ativação 'Genesis' AGORA: {:.4}", ativacao);
+    // Mostra a ativação da memória "Genesis" (usando busca para ver valor projetado com decay)
+    let results = brain.search_native("Genesis");
+    if let Some((_, activation)) = results.first() {
+         println!("📊 Ativação 'Genesis' AGORA: {:.4}", activation);
+    } else {
+        println!("📊 Memória 'Genesis' não encontrada ou desbotada.");
     }
 
     // 3. AVANÇAR O TEMPO (Passar 5 ticks)
@@ -43,10 +41,7 @@ fn main() {
     let nova_memoria = format!("Memória do Tick {}", brain.current_tick);
     println!("➕ Adicionando: '{}'", nova_memoria);
     
-    brain.add_node(Node::Concept(NodeMetadata::new(), ConceptData {
-        name: nova_memoria,
-        definition: "Criada no futuro.".into()
-    }));
+    brain.add_concept(nova_memoria, "Criada no futuro.".into());
 
     // 5. SALVAR E SAIR
     brain.save_to_file(memory_file).unwrap();
